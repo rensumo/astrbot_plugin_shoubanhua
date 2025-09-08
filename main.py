@@ -4,7 +4,7 @@ import io
 import json
 import random
 import re
-import functools # 【新增】导入 functools 用于 partial
+import functools
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any
@@ -27,7 +27,10 @@ class ImageWorkflow:
         connector = None
         if proxy_url:
             logger.info(f"ImageWorkflow 使用代理: {proxy_url}")
-            connector = aiohttp.TCPConnector(ssl=False)
+            # 【安全修复】移除 ssl=False，启用SSL证书验证。
+            # aiohttp 默认启用 SSL 验证。只有在明确知道风险并连接到使用自签名证书的内部服务时，
+            # 才应考虑自定义 SSL 上下文，而不是完全禁用它。
+            connector = aiohttp.TCPConnector()
         self.session = aiohttp.ClientSession(connector=connector)
         self.proxy = proxy_url
 
@@ -49,16 +52,17 @@ class ImageWorkflow:
     def _extract_first_frame_sync(self, raw: bytes) -> bytes:
         img_io = io.BytesIO(raw)
         try:
-            img = PILImage.open(img_io)
-            if getattr(img, "is_animated", False):
-                logger.info("检测到动图, 将抽取第一帧进行生成")
-                img.seek(0)
-                first_frame = img.convert("RGBA")
-                out_io = io.BytesIO()
-                first_frame.save(out_io, format="PNG")
-                return out_io.getvalue()
-        except Exception:
-            # Not an image or unsupported format, return raw
+            with PILImage.open(img_io) as img:
+                if getattr(img, "is_animated", False):
+                    logger.info("检测到动图, 将抽取第一帧进行生成")
+                    img.seek(0)
+                    first_frame = img.convert("RGBA")
+                    out_io = io.BytesIO()
+                    first_frame.save(out_io, format="PNG")
+                    return out_io.getvalue()
+        except Exception as e:
+            # 【缺陷修复】增加异常日志记录，而不是静默处理，便于调试。
+            logger.warning(f"抽取图片帧时发生错误, 将返回原始数据: {e}", exc_info=True)
             return raw
         return raw
 
@@ -125,14 +129,11 @@ class FigurineProPlugin(Star):
         self.user_counts_file = self.plugin_data_dir / "user_counts.json"
         self.user_counts: Dict[str, int] = {}
         
-        # API Key 状态
         self.key_index = 0
-        # 【修改 2.1】: 在 __init__ 中初始化锁
         self.key_lock = asyncio.Lock()
 
 
     async def initialize(self):
-        # 从配置中读取代理
         use_proxy = self.conf.get("use_proxy", False)
         proxy_url = self.conf.get("proxy_url") if use_proxy else None
         self.iwf = ImageWorkflow(proxy_url)
@@ -142,55 +143,28 @@ class FigurineProPlugin(Star):
         if not self.conf.get("api_keys"):
             logger.warning("FigurinePro: 未配置任何 API 密钥，插件可能无法工作")
 
-    # --- 用户次数管理 ---
     async def _load_user_counts(self):
-        loop = asyncio.get_running_loop()
-        if self.user_counts_file.exists():
-            try:
-                # 【修改 1.1】: 使用 run_in_executor 执行阻塞文件读取
-                content = await loop.run_in_executor(
-                    None, 
-                    functools.partial(self.user_counts_file.read_text, encoding="utf-8")
-                )
-                data = await loop.run_in_executor(None, json.loads, content)
-
-                if isinstance(data, dict):
-                    self.user_counts = data
-            except json.JSONDecodeError:
-                logger.error("用户次数文件格式错误，已重置。")
-                self.user_counts = {}
-            except Exception as e:
-                logger.error(f"加载用户次数文件时发生错误: {e}")
-                self.user_counts = {}
-        else:
+        if not self.user_counts_file.exists():
             self.user_counts = {}
-        # Ensure keys are strings
-        self.user_counts = {str(k): v for k, v in self.user_counts.items()}
-
+            return
+        
+        loop = asyncio.get_running_loop()
+        try:
+            content = await loop.run_in_executor(None, self.user_counts_file.read_text, "utf-8")
+            data = await loop.run_in_executor(None, json.loads, content)
+            if isinstance(data, dict):
+                self.user_counts = {str(k): v for k, v in data.items()}
+        except (json.JSONDecodeError, Exception) as e:
+            logger.error(f"加载用户次数文件时发生错误，文件可能已损坏: {e}", exc_info=True)
+            self.user_counts = {}
 
     async def _save_user_counts(self):
         loop = asyncio.get_running_loop()
         try:
-            # 【修改 1.2】: 使用 run_in_executor 执行阻塞文件写入
-            json_data = await loop.run_in_executor(
-                None, 
-                functools.partial(
-                    json.dumps, 
-                    self.user_counts, 
-                    ensure_ascii=False, 
-                    indent=4
-                )
-            )
-            await loop.run_in_executor(
-                None, 
-                functools.partial(
-                    self.user_counts_file.write_text, 
-                    json_data, 
-                    encoding="utf-8"
-                )
-            )
+            json_data = await loop.run_in_executor(None, functools.partial(json.dumps, self.user_counts, ensure_ascii=False, indent=4))
+            await loop.run_in_executor(None, self.user_counts_file.write_text, json_data, "utf-8")
         except Exception as e:
-            logger.error(f"保存用户次数文件时发生错误: {e}")
+            logger.error(f"保存用户次数文件时发生错误: {e}", exc_info=True)
 
     def _get_user_count(self, user_id: str) -> int:
         return self.user_counts.get(str(user_id), 0)
@@ -203,22 +177,26 @@ class FigurineProPlugin(Star):
             await self._save_user_counts()
     
     # --- 指令处理 ---
+    # 【可维护性修复】重构此函数以提高可读性
     @filter.regex(r"^#手办化(增加|查询)次数", is_admin=True)
     async def on_manage_counts(self, event: AstrMessageEvent):
         cmd_text = event.message_obj.message_str
+        at_seg = next((s for s in event.message_obj.message if isinstance(s, At)), None)
+        
         if "增加次数" in cmd_text:
-            match = re.search(r"(\d+)\s*(\d+)$", cmd_text)
-            at_seg = next((s for s in event.message_obj.message if isinstance(s, At)), None)
-            
-            target_qq = None
-            count = 0
-
-            if at_seg and (m := re.search(r"(\d+)$", cmd_text)):
+            target_qq, count = None, 0
+            # 模式1: @用户 + 次数 (例如: #手办化增加次数 @张三 10)
+            if at_seg:
                 target_qq = str(at_seg.qq)
-                count = int(m.group(1))
-            elif match:
-                target_qq = match.group(1)
-                count = int(match.group(2))
+                match = re.search(r"(\d+)\s*$", cmd_text)
+                if match:
+                    count = int(match.group(1))
+            # 模式2: QQ号 + 次数 (例如: #手办化增加次数 12345 10)
+            else:
+                match = re.search(r"(\d+)\s+(\d+)\s*$", cmd_text)
+                if match:
+                    target_qq = match.group(1)
+                    count = int(match.group(2))
 
             if not target_qq or count <= 0:
                 yield event.plain_result('格式错误，请使用：#手办化增加次数 @用户 <次数> 或 #手办化增加次数 <QQ号> <次数>')
@@ -230,16 +208,24 @@ class FigurineProPlugin(Star):
             yield event.plain_result(f"✅ 已为用户 {target_qq} 增加 {count} 次，当前剩余：{current_count + count} 次")
 
         elif "查询次数" in cmd_text:
-            match = re.search(r"(\d+)", cmd_text)
-            at_seg = next((s for s in event.message_obj.message if isinstance(s, At)), None)
-            target_qq = str(at_seg.qq) if at_seg else (match.group(1) if match else event.get_sender_id())
+            target_qq = None
+            if at_seg:
+                target_qq = str(at_seg.qq)
+            else:
+                match = re.search(r"(\d+)", cmd_text)
+                if match:
+                    target_qq = match.group(1)
+            
+            # 如果未指定用户，则查询发送者自己
+            if not target_qq:
+                target_qq = event.get_sender_id()
             
             count = self._get_user_count(target_qq)
             yield event.plain_result(f"用户 {target_qq} 剩余次数: {count}")
 
-    @filter.regex(r"^#手办化查询次数")
+    # 【可维护性修复】使用更精确的正则表达式(^...$)，避免与管理员指令冲突，并移除内部的复杂判断
+    @filter.regex(r"^#手办化查询次数$")
     async def on_query_my_counts(self, event: AstrMessageEvent):
-        if event.is_admin() and ("@" in event.message_obj.message_str or re.search(r"\d", event.message_obj.message_str)): return
         count = self._get_user_count(event.get_sender_id())
         yield event.plain_result(f"您好，您当前剩余次数为: {count}")
 
@@ -254,22 +240,17 @@ class FigurineProPlugin(Star):
                 yield event.plain_result("格式错误，请提供要添加的Key。")
                 return
             
-            added_count = 0
-            for key in new_keys:
-                if key not in api_keys:
-                    api_keys.append(key)
-                    added_count += 1
+            added_keys = [key for key in new_keys if key not in api_keys]
+            api_keys.extend(added_keys)
             await self.conf.set("api_keys", api_keys)
-            yield event.plain_result(f"✅ 操作完成，新增 {added_count} 个Key，当前共 {len(api_keys)} 个。")
+            yield event.plain_result(f"✅ 操作完成，新增 {len(added_keys)} 个Key，当前共 {len(api_keys)} 个。")
 
         elif "key列表" in cmd_text:
             if not api_keys:
                 yield event.plain_result("📝 暂未配置任何 API Key。")
                 return
             
-            key_list_str = "\n".join(
-                f"{i+1}. {key[:8]}...{key[-4:]}" for i, key in enumerate(api_keys)
-            )
+            key_list_str = "\n".join(f"{i+1}. {key[:8]}...{key[-4:]}" for i, key in enumerate(api_keys))
             yield event.plain_result(f"🔑 API Key 列表:\n{key_list_str}")
 
         elif "删除key" in cmd_text:
@@ -289,51 +270,40 @@ class FigurineProPlugin(Star):
     @filter.regex(r"^#?(手办化[2-6]?|Q版化|痛屋化2?|痛车化|cos化|cos自拍|bnn|孤独的我|第三视角|鬼图|第一视角|手办化帮助)")
     async def on_figurine(self, event: AstrMessageEvent):
         cmd_match = re.match(r"^#?([\w\d]+)", event.message_obj.message_str)
-        if not cmd_match:
-            return
-        
+        if not cmd_match: return
         cmd = cmd_match.group(1)
 
-        # 帮助指令
         if cmd == "手办化帮助":
             yield event.plain_result(self.conf.get("help_text", "帮助信息未配置"))
             return
 
-        # 权限检查
-        if not event.is_admin():
-            count = self._get_user_count(event.get_sender_id())
-            if count <= 0:
-                yield event.plain_result("❌ 您的使用次数已用完，请联系管理员补充。")
-                return
+        if not event.is_admin() and self._get_user_count(event.get_sender_id()) <= 0:
+            yield event.plain_result("❌ 您的使用次数已用完，请联系管理员补充。")
+            return
         
-        # 获取图片
         img_bytes = await self.iwf.get_first_image(event)
         if not img_bytes:
             yield event.plain_result("请发送或引用一张图片，或@一个用户再试。")
             return
 
-        # 获取 Prompt
         cmd_map = {
-            "手办化": "figurine_1", "手办化2": "figurine_2", "手办化3": "figurine_3",
-            "手办化4": "figurine_4", "手办化5": "figurine_5", "手办化6": "figurine_6",
-            "Q版化": "q_version", "痛屋化": "pain_room_1", "痛屋化2": "pain_room_2",
-            "痛车化": "pain_car", "cos化": "cos", "cos自拍": "cos_selfie",
+            "手办化": "figurine_1", "手办化2": "figurine_2", "手办化3": "figurine_3", "手办化4": "figurine_4",
+            "手办化5": "figurine_5", "手办化6": "figurine_6", "Q版化": "q_version", "痛屋化": "pain_room_1",
+            "痛屋化2": "pain_room_2", "痛车化": "pain_car", "cos化": "cos", "cos自拍": "cos_selfie",
             "孤独的我": "clown", "第三视角": "view_3", "鬼图": "ghost", "第一视角": "view_1"
         }
-
-        user_prompt = ""
-        prompt_key = "bnn_custom" # 默认为自定义
-
+        
+        prompt_key = cmd_map.get(cmd) if cmd != "bnn" else "bnn_custom"
+        if not prompt_key:
+            yield event.plain_result(f"未知的指令: {cmd}")
+            return
+            
         if cmd == "bnn":
             user_prompt = re.sub(r"^#?bnn\s*", "", event.message_obj.message_str, count=1).strip()
             if not user_prompt:
                 yield event.plain_result("❌ 命令格式错误，请使用：#bnn <提示词> [图片]")
                 return
         else:
-            prompt_key = cmd_map.get(cmd)
-            if not prompt_key:
-                yield event.plain_result(f"未知的指令: {cmd}")
-                return
             user_prompt = self.conf.get("prompts", {}).get(prompt_key, "")
 
         if not user_prompt:
@@ -343,68 +313,47 @@ class FigurineProPlugin(Star):
         yield event.plain_result(f"🎨 收到请求，正在生成 [{cmd}] 风格图片...")
         start_time = datetime.now()
 
-        # 调用API
         res = await self._call_api(img_bytes, user_prompt)
 
-        # 处理结果
-        elapsed = ((datetime.now() - start_time).total_seconds())
+        elapsed = (datetime.now() - start_time).total_seconds()
         if isinstance(res, bytes):
-            # 扣除次数
             if not event.is_admin():
                 await self._decrease_user_count(event.get_sender_id())
             
             remaining_count = "∞" if event.is_admin() else self._get_user_count(event.get_sender_id())
-            
             caption = f"✅ 生成成功 ({elapsed:.2f}s)\n预设: {cmd} | 剩余次数: {remaining_count}"
             yield event.chain_result([Image.fromBytes(res), Plain(caption)])
         else:
             yield event.plain_result(f"❌ 生成失败 ({elapsed:.2f}s)\n原因: {res}")
 
-
-    # 【修改 2.2】: _get_api_key 变为异步方法并使用锁
     async def _get_api_key(self) -> str | None:
         keys = self.conf.get("api_keys", [])
-        if not keys:
-            return None
+        if not keys: return None
         
-        async with self.key_lock: # 使用锁保护 key_index
-            # 轮换使用Key
+        async with self.key_lock:
             key = keys[self.key_index]
             self.key_index = (self.key_index + 1) % len(keys)
             return key
 
     async def _call_api(self, image_bytes: bytes, prompt: str) -> bytes | str:
         api_url = self.conf.get("api_url")
-        if not api_url:
-            return "API URL 未配置"
+        if not api_url: return "API URL 未配置"
             
-        # 【修改 2.3】: 调用异步的 _get_api_key
         api_key = await self._get_api_key()
-        if not api_key:
-            return "无可用的 API Key"
+        if not api_key: return "无可用的 API Key"
 
         img_b64 = base64.b64encode(image_bytes).decode("utf-8")
         
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}"
-        }
-        
-        content = [
-            {"type": "text", "text": prompt},
-            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}}
-        ]
-
+        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
         payload = {
-            "model": "nano-banana",
-            "messages": [{"role": "user", "content": content}],
-            "max_tokens": 1500,
-            "stream": False
-        }
+            "model": "nano-banana", "max_tokens": 1500, "stream": False,
+            "messages": [{"role": "user", "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}}
+            ]}]}
 
         try:
-            proxy = self.iwf.proxy
-            async with self.iwf.session.post(api_url, json=payload, headers=headers, proxy=proxy, timeout=120) as resp:
+            async with self.iwf.session.post(api_url, json=payload, headers=headers, proxy=self.iwf.proxy, timeout=120) as resp:
                 if resp.status != 200:
                     error_text = await resp.text()
                     logger.error(f"API 请求失败: HTTP {resp.status}, 响应: {error_text}")
@@ -415,41 +364,39 @@ class FigurineProPlugin(Star):
                 if "error" in data:
                     return data["error"].get("message", json.dumps(data["error"]))
                 
-                # 从多种可能的路径提取图片URL
+                # 【可维护性修复】为复杂的API响应解析逻辑添加注释。
+                # 由于第三方API的响应结构可能不统一或发生变更，这里采用多种方式尝试提取图片URL，以提高插件的健壮性。
                 gen_image_url = None
                 try:
-                    gen_image_url = (
-                        data.get("choices", [{}])[0].get("message", {}).get("images", [{}])[0]
-                        .get("image_url", {}).get("url")
-                    )
-                    if not gen_image_url:
-                         gen_image_url = (
-                            data.get("choices", [{}])[0].get("message", {}).get("images", [{}])[0].get("url")
-                         )
+                    # 方式1: 尝试从标准路径 `choices[0].message.images[0].image_url.url` 获取
+                    gen_image_url = data["choices"][0]["message"]["images"][0]["image_url"]["url"]
                 except (IndexError, TypeError, KeyError):
-                    pass
-                
+                    try:
+                        # 方式2: 尝试备用路径 `choices[0].message.images[0].url`
+                        gen_image_url = data["choices"][0]["message"]["images"][0]["url"]
+                    except (IndexError, TypeError, KeyError):
+                        pass # 继续尝试下一种方式
+
+                # 方式3: 如果直接路径查找失败，尝试从文本内容中用正则表达式匹配URL
                 if not gen_image_url:
-                    content_text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                    url_match = re.search(r'https?://[^\s<>")\]]+', content_text)
-                    if url_match:
-                        gen_image_url = url_match.group(0).rstrip(")>,'\"")
+                    try:
+                        content_text = data["choices"][0]["message"]["content"]
+                        url_match = re.search(r'https?://[^\s<>")\]]+', content_text)
+                        if url_match:
+                            gen_image_url = url_match.group(0).rstrip(")>,'\"")
+                    except (IndexError, TypeError, KeyError):
+                        pass
 
                 if not gen_image_url:
-                    # 【修改 3.1】: 返回错误信息时包含截断后的原始响应
-                    error_msg = f"API响应中未找到图片数据。原始响应 (部分): {str(data)[:500]}..." # 增加更多上下文
+                    error_msg = f"API响应中未找到图片数据。原始响应 (部分): {str(data)[:500]}..."
                     logger.error(f"API响应中未找到图片数据: {data}")
                     return error_msg
 
-                # 下载生成的图片
                 if gen_image_url.startswith("data:image/"):
-                    b64_data = gen_image_url.split(",")[1]
+                    b64_data = gen_image_url.split(",", 1)[1]
                     return base64.b64decode(b64_data)
                 else:
-                    img_bytes = await self.iwf._download_image(gen_image_url)
-                    if img_bytes is None:
-                        return "下载生成的图片失败"
-                    return img_bytes
+                    return await self.iwf._download_image(gen_image_url) or "下载生成的图片失败"
 
         except asyncio.TimeoutError:
             logger.error("API 请求超时")
