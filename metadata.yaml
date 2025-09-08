@@ -1,4 +1,10 @@
-name: astrbot_plugin_shoubanhua
-desc: 调用第三方api，手办化、cos化等功能
-version: v1.0.0
-author: 溜溜球
+{
+  "name": "shoubanhua",
+  "title": "手办化插件",
+  "description": "基于第三方api，实现手办化，cos化等功能",
+  "version": "1.0.0",
+  "author": "溜溜球",
+  "homepage": "https://github.com/shskjw/astrbot_plugin_shoubanhua",
+  "entry": "main.py"
+
+}
