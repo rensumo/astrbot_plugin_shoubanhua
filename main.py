@@ -1,13 +1,15 @@
+# --- START OF MODIFIED main.py ---
+
 import asyncio
 import base64
+import functools
 import io
 import json
 import random
 import re
-import functools
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 
 import aiohttp
 from PIL import Image as PILImage
@@ -15,7 +17,7 @@ from PIL import Image as PILImage
 import astrbot.core.message.components as Comp
 from astrbot.api import logger
 from astrbot.api.event import filter
-from astrbot.api.star import Context, Star, StarTools, register
+from astrbot.api.star import Context, Star, StarTools
 from astrbot.core import AstrBotConfig
 from astrbot.core.message.components import Image, At, Reply, Plain
 from astrbot.core.platform.astr_message_event import AstrMessageEvent
@@ -24,14 +26,10 @@ from astrbot.core.platform.astr_message_event import AstrMessageEvent
 # --- 图像处理工作流 ---
 class ImageWorkflow:
     def __init__(self, proxy_url: str | None = None):
-        connector = None
         if proxy_url:
             logger.info(f"ImageWorkflow 使用代理: {proxy_url}")
-            # 【安全修复】移除 ssl=False，启用SSL证书验证。
-            # aiohttp 默认启用 SSL 验证。只有在明确知道风险并连接到使用自签名证书的内部服务时，
-            # 才应考虑自定义 SSL 上下文，而不是完全禁用它。
-            connector = aiohttp.TCPConnector()
-        self.session = aiohttp.ClientSession(connector=connector)
+        # 【修复】让 aiohttp.ClientSession 自己管理 connector 的生命周期，这是最简单和安全的方式，避免资源泄漏。
+        self.session = aiohttp.ClientSession()
         self.proxy = proxy_url
 
     async def _download_image(self, url: str) -> bytes | None:
@@ -44,8 +42,10 @@ class ImageWorkflow:
             return None
 
     async def _get_avatar(self, user_id: str) -> bytes | None:
+        # 【修复】对于非 QQ 平台或无效 ID，返回 None 而不是一个随机 QQ 头像，避免产生误导性结果。
         if not user_id.isdigit():
-            user_id = "".join(random.choices("0123456789", k=9))
+            logger.warning(f"无法获取非 QQ 平台或无效 QQ 号 {user_id} 的头像。")
+            return None
         avatar_url = f"https://q1.qlogo.cn/g?b=qq&nk={user_id}&s=640"
         return await self._download_image(avatar_url)
 
@@ -61,7 +61,7 @@ class ImageWorkflow:
                     first_frame.save(out_io, format="PNG")
                     return out_io.getvalue()
         except Exception as e:
-            # 【缺陷修复】增加异常日志记录，而不是静默处理，便于调试。
+            # 【修复】增加异常日志记录
             logger.warning(f"抽取图片帧时发生错误, 将返回原始数据: {e}", exc_info=True)
             return raw
         return raw
@@ -103,7 +103,8 @@ class ImageWorkflow:
             elif isinstance(seg, At):
                 at_user_id = str(seg.qq)
         
-        # 如果有@用户，使用其头像
+        # 【修复】如果 @ 了用户，则优先使用其头像。如果获取失败，则返回 None，
+        # 而不是错误地回退到发送者头像，以避免逻辑混乱。
         if at_user_id:
             return await self._get_avatar(at_user_id)
             
@@ -115,12 +116,7 @@ class ImageWorkflow:
             await self.session.close()
 
 
-@register(
-    "astrbot_plugin_手办化",
-    "溜溜球",
-    "调用第三方api，将图片手办化、Cos化等",
-    "1.0.0",
-)
+# 【修复】移除在新版框架中不再需要的 @register 装饰器
 class FigurineProPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -131,7 +127,8 @@ class FigurineProPlugin(Star):
         
         self.key_index = 0
         self.key_lock = asyncio.Lock()
-
+        
+        self.iwf: ImageWorkflow
 
     async def initialize(self):
         use_proxy = self.conf.get("use_proxy", False)
@@ -177,23 +174,22 @@ class FigurineProPlugin(Star):
             await self._save_user_counts()
     
     # --- 指令处理 ---
-    # 【可维护性修复】重构此函数以提高可读性
     @filter.regex(r"^#手办化(增加|查询)次数", is_admin=True)
     async def on_manage_counts(self, event: AstrMessageEvent):
-        cmd_text = event.message_obj.message_str
-        at_seg = next((s for s in event.message_obj.message if isinstance(s, At)), None)
+        cmd_text = event.message_obj.message_str.strip()
         
         if "增加次数" in cmd_text:
             target_qq, count = None, 0
-            # 模式1: @用户 + 次数 (例如: #手办化增加次数 @张三 10)
-            if at_seg:
+            at_seg = next((s for s in event.message_obj.message if isinstance(s, At)), None)
+            
+            if at_seg: # 模式1: @用户 + 次数 (例如: #手办化增加次数 @张三 10)
                 target_qq = str(at_seg.qq)
                 match = re.search(r"(\d+)\s*$", cmd_text)
                 if match:
                     count = int(match.group(1))
-            # 模式2: QQ号 + 次数 (例如: #手办化增加次数 12345 10)
-            else:
-                match = re.search(r"(\d+)\s+(\d+)\s*$", cmd_text)
+            else: # 模式2: QQ号 + 次数 (例如: #手办化增加次数 12345 10)
+                # 【修复】使用更严格的正则确保格式正确性
+                match = re.search(r"增加次数\s+(\d+)\s+(\d+)\s*$", cmd_text)
                 if match:
                     target_qq = match.group(1)
                     count = int(match.group(2))
@@ -209,21 +205,22 @@ class FigurineProPlugin(Star):
 
         elif "查询次数" in cmd_text:
             target_qq = None
+            at_seg = next((s for s in event.message_obj.message if isinstance(s, At)), None)
+
             if at_seg:
                 target_qq = str(at_seg.qq)
             else:
-                match = re.search(r"(\d+)", cmd_text)
+                 # 【修复】使用更严格的正则提取QQ号
+                match = re.search(r"查询次数\s+(\d+)", cmd_text)
                 if match:
                     target_qq = match.group(1)
             
-            # 如果未指定用户，则查询发送者自己
-            if not target_qq:
+            if not target_qq: # 如果未指定用户，则查询发送者自己
                 target_qq = event.get_sender_id()
             
             count = self._get_user_count(target_qq)
             yield event.plain_result(f"用户 {target_qq} 剩余次数: {count}")
 
-    # 【可维护性修复】使用更精确的正则表达式(^...$)，避免与管理员指令冲突，并移除内部的复杂判断
     @filter.regex(r"^#手办化查询次数$")
     async def on_query_my_counts(self, event: AstrMessageEvent):
         count = self._get_user_count(event.get_sender_id())
@@ -267,16 +264,55 @@ class FigurineProPlugin(Star):
             else:
                 yield event.plain_result("格式错误，请使用 #手办化删除key <序号|all>")
 
-    @filter.regex(r"^#?(手办化[2-6]?|Q版化|痛屋化2?|痛车化|cos化|cos自拍|bnn|孤独的我|第三视角|鬼图|第一视角|手办化帮助)")
-    async def on_figurine(self, event: AstrMessageEvent):
+    def _parse_figurine_command(self, event: AstrMessageEvent) -> Tuple[str | None, str | None]:
+        """【新增】辅助函数，用于解析指令和获取对应的 prompt"""
         cmd_match = re.match(r"^#?([\w\d]+)", event.message_obj.message_str)
-        if not cmd_match: return
+        if not cmd_match:
+            return None, None
         cmd = cmd_match.group(1)
 
-        if cmd == "手办化帮助":
-            yield event.plain_result(self.conf.get("help_text", "帮助信息未配置"))
+        cmd_map = {
+            "手办化": "figurine_1", "手办化2": "figurine_2", "手办化3": "figurine_3", "手办化4": "figurine_4",
+            "手办化5": "figurine_5", "手办化6": "figurine_6", "Q版化": "q_version", "痛屋化": "pain_room_1",
+            "痛屋化2": "pain_room_2", "痛车化": "pain_car", "cos化": "cos", "cos自拍": "cos_selfie",
+            "孤独的我": "clown", "第三视角": "view_3", "鬼图": "ghost", "第一视角": "view_1", "手办化帮助": "help"
+        }
+        
+        prompt_key = cmd_map.get(cmd) if cmd != "bnn" else "bnn_custom"
+        if not prompt_key and cmd != "手办化帮助": # `手办化帮助` a special case handled in caller
+            return cmd, None
+        
+        user_prompt = None
+        if cmd == "bnn":
+            user_prompt = re.sub(r"^#?bnn\s*", "", event.message_obj.message_str, count=1).strip()
+        elif prompt_key == "help":
+            user_prompt = self.conf.get("help_text", "帮助信息未配置")
+        elif prompt_key:
+            user_prompt = self.conf.get("prompts", {}).get(prompt_key, "")
+
+        return cmd, user_prompt
+
+    @filter.regex(r"^#?(手办化[2-6]?|Q版化|痛屋化2?|痛车化|cos化|cos自拍|bnn|孤独的我|第三视角|鬼图|第一视角|手办化帮助)")
+    async def on_figurine(self, event: AstrMessageEvent):
+        # 【重构】将指令解析和 prompt 获取逻辑移至辅助函数，使主函数更清晰。
+        cmd, user_prompt = self._parse_figurine_command(event)
+
+        if not cmd:
             return
 
+        if cmd == "手办化帮助":
+            yield event.plain_result(user_prompt)
+            return
+
+        if not user_prompt:
+            if cmd == "bnn":
+                yield event.plain_result("❌ 命令格式错误，请使用：#bnn <提示词> [图片]")
+            elif self.conf.get("prompts", {}).get(cmd) is None: # prompt key not found
+                 yield event.plain_result(f"❌ 预设 '{cmd}' 未在配置中找到，请检查插件配置。")
+            else: # Known command, but prompt is empty in config
+                 yield event.plain_result(f"未知的指令: {cmd}")
+            return
+            
         if not event.is_admin() and self._get_user_count(event.get_sender_id()) <= 0:
             yield event.plain_result("❌ 您的使用次数已用完，请联系管理员补充。")
             return
@@ -284,30 +320,6 @@ class FigurineProPlugin(Star):
         img_bytes = await self.iwf.get_first_image(event)
         if not img_bytes:
             yield event.plain_result("请发送或引用一张图片，或@一个用户再试。")
-            return
-
-        cmd_map = {
-            "手办化": "figurine_1", "手办化2": "figurine_2", "手办化3": "figurine_3", "手办化4": "figurine_4",
-            "手办化5": "figurine_5", "手办化6": "figurine_6", "Q版化": "q_version", "痛屋化": "pain_room_1",
-            "痛屋化2": "pain_room_2", "痛车化": "pain_car", "cos化": "cos", "cos自拍": "cos_selfie",
-            "孤独的我": "clown", "第三视角": "view_3", "鬼图": "ghost", "第一视角": "view_1"
-        }
-        
-        prompt_key = cmd_map.get(cmd) if cmd != "bnn" else "bnn_custom"
-        if not prompt_key:
-            yield event.plain_result(f"未知的指令: {cmd}")
-            return
-            
-        if cmd == "bnn":
-            user_prompt = re.sub(r"^#?bnn\s*", "", event.message_obj.message_str, count=1).strip()
-            if not user_prompt:
-                yield event.plain_result("❌ 命令格式错误，请使用：#bnn <提示词> [图片]")
-                return
-        else:
-            user_prompt = self.conf.get("prompts", {}).get(prompt_key, "")
-
-        if not user_prompt:
-            yield event.plain_result(f"❌ 预设 '{prompt_key}' 未在配置中找到，请检查插件配置。")
             return
 
         yield event.plain_result(f"🎨 收到请求，正在生成 [{cmd}] 风格图片...")
@@ -335,6 +347,35 @@ class FigurineProPlugin(Star):
             self.key_index = (self.key_index + 1) % len(keys)
             return key
 
+    def _extract_image_url_from_response(self, data: Dict[str, Any]) -> str | None:
+        """
+        【新增】辅助函数，用于从复杂的 API 响应中提取图片 URL。
+        由于第三方 API 的响应结构可能不统一或发生变更，这里采用多种方式尝试提取，以提高插件的健壮性。
+        """
+        try:
+            # 方式1: 尝试从标准路径 `choices[0].message.images[0].image_url.url` 获取
+            return data["choices"][0]["message"]["images"][0]["image_url"]["url"]
+        except (IndexError, TypeError, KeyError):
+            pass # 如果失败，静默处理并尝试下一种方式
+
+        try:
+            # 方式2: 尝试备用路径 `choices[0].message.images[0].url`
+            return data["choices"][0]["message"]["images"][0]["url"]
+        except (IndexError, TypeError, KeyError):
+            pass
+
+        try:
+            # 方式3: 如果直接路径查找失败，尝试从文本内容中用正则表达式匹配URL
+            content_text = data["choices"][0]["message"]["content"]
+            # 匹配 http/https 开头的 URL，并处理结尾可能存在的干扰字符
+            url_match = re.search(r'https?://[^\s<>")\]]+', content_text)
+            if url_match:
+                return url_match.group(0).rstrip(")>,'\"")
+        except (IndexError, TypeError, KeyError):
+            pass
+
+        return None
+
     async def _call_api(self, image_bytes: bytes, prompt: str) -> bytes | str:
         api_url = self.conf.get("api_url")
         if not api_url: return "API URL 未配置"
@@ -360,32 +401,11 @@ class FigurineProPlugin(Star):
                     return f"API请求失败 (HTTP {resp.status}): {error_text[:200]}"
                 
                 data = await resp.json()
-
                 if "error" in data:
                     return data["error"].get("message", json.dumps(data["error"]))
                 
-                # 【可维护性修复】为复杂的API响应解析逻辑添加注释。
-                # 由于第三方API的响应结构可能不统一或发生变更，这里采用多种方式尝试提取图片URL，以提高插件的健壮性。
-                gen_image_url = None
-                try:
-                    # 方式1: 尝试从标准路径 `choices[0].message.images[0].image_url.url` 获取
-                    gen_image_url = data["choices"][0]["message"]["images"][0]["image_url"]["url"]
-                except (IndexError, TypeError, KeyError):
-                    try:
-                        # 方式2: 尝试备用路径 `choices[0].message.images[0].url`
-                        gen_image_url = data["choices"][0]["message"]["images"][0]["url"]
-                    except (IndexError, TypeError, KeyError):
-                        pass # 继续尝试下一种方式
-
-                # 方式3: 如果直接路径查找失败，尝试从文本内容中用正则表达式匹配URL
-                if not gen_image_url:
-                    try:
-                        content_text = data["choices"][0]["message"]["content"]
-                        url_match = re.search(r'https?://[^\s<>")\]]+', content_text)
-                        if url_match:
-                            gen_image_url = url_match.group(0).rstrip(")>,'\"")
-                    except (IndexError, TypeError, KeyError):
-                        pass
+                # 【重构】调用新的辅助函数来解析响应
+                gen_image_url = self._extract_image_url_from_response(data)
 
                 if not gen_image_url:
                     error_msg = f"API响应中未找到图片数据。原始响应 (部分): {str(data)[:500]}..."
@@ -406,6 +426,6 @@ class FigurineProPlugin(Star):
             return f"发生未知错误: {e}"
 
     async def terminate(self):
-        if self.iwf:
+        if hasattr(self, 'iwf') and self.iwf:
             await self.iwf.terminate()
-            logger.info("[FigurinePro] aiohttp session 已关闭")
+        logger.info("[FigurinePro] 插件已终止")
