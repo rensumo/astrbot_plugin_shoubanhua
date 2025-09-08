@@ -4,6 +4,7 @@ import io
 import json
 import random
 import re
+import functools # 【新增】导入 functools 用于 partial
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any
@@ -16,7 +17,6 @@ from astrbot.api import logger
 from astrbot.api.event import filter
 from astrbot.api.star import Context, Star, StarTools, register
 from astrbot.core import AstrBotConfig
-# 【修改 1/2】: 在这里导入 Plain 组件
 from astrbot.core.message.components import Image, At, Reply, Plain
 from astrbot.core.platform.astr_message_event import AstrMessageEvent
 
@@ -127,6 +127,9 @@ class FigurineProPlugin(Star):
         
         # API Key 状态
         self.key_index = 0
+        # 【修改 2.1】: 在 __init__ 中初始化锁
+        self.key_lock = asyncio.Lock()
+
 
     async def initialize(self):
         # 从配置中读取代理
@@ -141,15 +144,24 @@ class FigurineProPlugin(Star):
 
     # --- 用户次数管理 ---
     async def _load_user_counts(self):
+        loop = asyncio.get_running_loop()
         if self.user_counts_file.exists():
-            with self.user_counts_file.open("r", encoding="utf-8") as f:
-                try:
-                    data = json.load(f)
-                    if isinstance(data, dict):
-                        self.user_counts = data
-                except json.JSONDecodeError:
-                    logger.error("用户次数文件格式错误，已重置。")
-                    self.user_counts = {}
+            try:
+                # 【修改 1.1】: 使用 run_in_executor 执行阻塞文件读取
+                content = await loop.run_in_executor(
+                    None, 
+                    functools.partial(self.user_counts_file.read_text, encoding="utf-8")
+                )
+                data = await loop.run_in_executor(None, json.loads, content)
+
+                if isinstance(data, dict):
+                    self.user_counts = data
+            except json.JSONDecodeError:
+                logger.error("用户次数文件格式错误，已重置。")
+                self.user_counts = {}
+            except Exception as e:
+                logger.error(f"加载用户次数文件时发生错误: {e}")
+                self.user_counts = {}
         else:
             self.user_counts = {}
         # Ensure keys are strings
@@ -157,8 +169,28 @@ class FigurineProPlugin(Star):
 
 
     async def _save_user_counts(self):
-        with self.user_counts_file.open("w", encoding="utf-8") as f:
-            json.dump(self.user_counts, f, ensure_ascii=False, indent=4)
+        loop = asyncio.get_running_loop()
+        try:
+            # 【修改 1.2】: 使用 run_in_executor 执行阻塞文件写入
+            json_data = await loop.run_in_executor(
+                None, 
+                functools.partial(
+                    json.dumps, 
+                    self.user_counts, 
+                    ensure_ascii=False, 
+                    indent=4
+                )
+            )
+            await loop.run_in_executor(
+                None, 
+                functools.partial(
+                    self.user_counts_file.write_text, 
+                    json_data, 
+                    encoding="utf-8"
+                )
+            )
+        except Exception as e:
+            logger.error(f"保存用户次数文件时发生错误: {e}")
 
     def _get_user_count(self, user_id: str) -> int:
         return self.user_counts.get(str(user_id), 0)
@@ -324,28 +356,30 @@ class FigurineProPlugin(Star):
             remaining_count = "∞" if event.is_admin() else self._get_user_count(event.get_sender_id())
             
             caption = f"✅ 生成成功 ({elapsed:.2f}s)\n预设: {cmd} | 剩余次数: {remaining_count}"
-            # 【修改 2/2】: 使用 Plain() 将字符串包装成消息组件
             yield event.chain_result([Image.fromBytes(res), Plain(caption)])
         else:
             yield event.plain_result(f"❌ 生成失败 ({elapsed:.2f}s)\n原因: {res}")
 
 
-    def _get_api_key(self) -> str | None:
+    # 【修改 2.2】: _get_api_key 变为异步方法并使用锁
+    async def _get_api_key(self) -> str | None:
         keys = self.conf.get("api_keys", [])
         if not keys:
             return None
         
-        # 轮换使用Key
-        key = keys[self.key_index]
-        self.key_index = (self.key_index + 1) % len(keys)
-        return key
+        async with self.key_lock: # 使用锁保护 key_index
+            # 轮换使用Key
+            key = keys[self.key_index]
+            self.key_index = (self.key_index + 1) % len(keys)
+            return key
 
     async def _call_api(self, image_bytes: bytes, prompt: str) -> bytes | str:
         api_url = self.conf.get("api_url")
         if not api_url:
             return "API URL 未配置"
             
-        api_key = self._get_api_key()
+        # 【修改 2.3】: 调用异步的 _get_api_key
+        api_key = await self._get_api_key()
         if not api_key:
             return "无可用的 API Key"
 
@@ -402,8 +436,10 @@ class FigurineProPlugin(Star):
                         gen_image_url = url_match.group(0).rstrip(")>,'\"")
 
                 if not gen_image_url:
+                    # 【修改 3.1】: 返回错误信息时包含截断后的原始响应
+                    error_msg = f"API响应中未找到图片数据。原始响应 (部分): {str(data)[:500]}..." # 增加更多上下文
                     logger.error(f"API响应中未找到图片数据: {data}")
-                    return "API响应中未找到图片数据"
+                    return error_msg
 
                 # 下载生成的图片
                 if gen_image_url.startswith("data:image/"):
@@ -425,4 +461,4 @@ class FigurineProPlugin(Star):
     async def terminate(self):
         if self.iwf:
             await self.iwf.terminate()
-            logger.info("[FigurinePro] aiohttp session 已关闭")s
+            logger.info("[FigurinePro] aiohttp session 已关闭")
