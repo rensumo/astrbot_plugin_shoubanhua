@@ -15,6 +15,12 @@
         },
         "default": []
     },
+    "prefix": {
+        "description": "【重要】是否要求指令必须带前缀",
+        "type": "bool",
+        "hint": "推荐开启。开启后，指令需要前缀（如 '#'）或 @机器人 才能触发，可避免日常聊天误触。",
+        "default": true
+    },
     "use_proxy": {
         "description": "是否启用网络代理",
         "type": "bool",
@@ -27,66 +33,89 @@
         "hint": "格式为 http://user:pass@host:port, 例如 http://127.0.0.1:7890",
         "default": ""
     },
+    "user_whitelist": {
+        "description": "【权限】用户白名单",
+        "type": "list",
+        "hint": "留空则对所有用户开放。填写后，只有在此列表中的用户才能使用本插件功能（管理员除外）。",
+        "items": {
+            "type": "string",
+            "description": "用户QQ号"
+        },
+        "default": []
+    },
+    "user_blacklist": {
+        "description": "【权限】用户黑名单",
+        "type": "list",
+        "hint": "黑名单优先级最高。在此列表中的用户将无法使用本插件功能（管理员除外）。",
+        "items": {
+            "type": "string",
+            "description": "用户QQ号"
+        },
+        "default": []
+    },
+    "group_whitelist": {
+        "description": "【权限】群聊白名单",
+        "type": "list",
+        "hint": "留空则在所有群聊中可用。填写后，只有在此列表中的群聊才能使用本插件功能。",
+        "items": {
+            "type": "string",
+            "description": "群号"
+        },
+        "default": []
+    },
+    "group_blacklist": {
+        "description": "【权限】群聊黑名单",
+        "type": "list",
+        "hint": "黑名单优先级最高。在此列表中的群聊将无法使用本插件功能。",
+        "items": {
+            "type": "string",
+            "description": "群号"
+        },
+        "default": []
+    },
+    "enable_user_limit": {
+        "description": "【次数限制】是否启用【用户】次数限制",
+        "type": "bool",
+        "hint": "开启后，将根据用户的QQ号独立计算和限制使用次数。",
+        "default": true
+    },
+    "enable_group_limit": {
+        "description": "【次数限制】是否启用【群组】次数限制",
+        "type": "bool",
+        "hint": "开启后，将根据群号计算和限制群内总的使用次数。",
+        "default": false
+    },
     "help_text": {
         "description": "使用 #手办化帮助 指令时显示的文本",
         "type": "text",
         "editor_mode": true,
         "editor_language": "markdown",
-        "default": "🎨 手办化Pro插件使用帮助：\n\n📌 基础命令：\n#手办化 [图片] - 生成标准手办化图片\n#Q版化 [图片] - 生成Q版手办化图片\n#痛屋化 [图片] - 生成痛屋场景图片\n#痛车化 [图片] - 生成痛车场景图片\n#cos化 [图片] - 生成cosplay照片\n#cos自拍 [图片] - 生成cosplay自拍\n#孤独的我 [图片] - 生成孤独场景图片\n\n📌 数字版本：\n#手办化2 [图片] - 手办化版本2\n#手办化3 [图片] - 手办化版本3\n#手办化4 [图片] - 手办化版本4\n#手办化5 [图片] - 手办化版本5\n#手办化6 [图片] - 手办化版本6\n\n📌 新增命令：\n#第三视角 [图片] - 生成第三人称视角场景\n#痛屋化2 [图片] - 生成改良版痛屋场景\n#鬼图 [图片] - 生成灵异鬼图风格照片\n#第一视角 [图片] - 生成第一人称视角场景\n\n📌 自定义提示词：\n#bnn <提示词> [图片] - 使用自定义提示词生成\n\n📌 使用方式：\n1. 发送图片并使用命令\n2. 引用含有图片的消息并使用命令\n3. @某人使用命令（将使用该人的头像）\n\n📌 次数查询：\n#手办化查询次数 - 查询自己的剩余次数\n\n📌 管理命令（仅主人）：\n#手办化添加key <key1> <key2>... - 添加一个或多个API密钥\n#手办化key列表 - 查看API密钥列表\n#手办化删除key <序号|all> - 删除API密钥\n#手办化增加次数 <QQ号> <次数> - 为用户增加使用次数\n#手办化查询次数 <QQ号> - 查询指定用户剩余次数"
+        "default": "🎨 手办化Pro插件使用帮助：\n\n📌 基础命令 (可加#也可不加)：\n手办化 [图片] - 生成标准手办化图片\nQ版化 [图片] - 生成Q版手办化图片\n痛屋化 [图片] - 生成痛屋场景图片\n痛车化 [图片] - 生成痛车场景图片\ncos化 [图片] - 生成cosplay照片\ncos自拍 [图片] - 生成cosplay自拍\n孤独的我 [图片] - 生成孤独场景图片\n贴纸化 [图片] - 生成贴纸化图片\n玉足 [图片] - 生成玉足图片\nfumo化 [图片] - 生成fumo化图片\n\n📌 数字版本：\n手办化2 [图片]\n手办化3 [图片]\n手办化4 [图片]\n手办化5 [图片]\n手办化6 [图片]\n\n📌 新增命令：\n第三视角 [图片]\n痛屋化2 [图片]\n鬼图 [图片]\n第一视角 [图片]\n\n📌 自定义提示词：\nbnn <提示词> [图片]\n\n📌 使用方式：\n1. 发送图片并使用命令\n2. 引用含有图片的消息并使用命令\n3. @某人使用命令（将使用该人的头像）\n\n📌 次数查询 (需加#)：\n#手办化查询次数 - 查询自己和本群的剩余次数\n\n📌 管理命令 (仅主人, 需加#)：\n#手办化添加key <key1> <key2>...\n#手办化key列表\n#手办化删除key <序号|all>\n#手办化增加用户次数 <QQ号> <次数>\n#手办化增加群组次数 <群号> <次数>"
     },
     "prompts": {
-        "description": "所有指令对应的 Prompt 提示词",
+        "description": "【可选】自定义指令的 Prompt 提示词",
         "type": "object",
-        "hint": "在这里自定义不同指令的生成效果",
+        "hint": "在这里可以自定义或覆盖默认的指令效果。如果留空，插件将自动使用同目录下 prompts.json 文件中的默认设置。",
         "items": {
-            "figurine_1": {
-                "description": "#手办化", "type": "text", "editor_mode": true, "default": "Your task is to create a photorealistic, masterpiece-quality image of a 1/7 scale commercialized figurine based on the user's character. The final image must be in a realistic style and environment.\n\n**Crucial Instruction on Face & Likeness:** The figurine's face is the most critical element. It must be a perfect, high-fidelity 3D translation of the character from the source image. The sculpt must be sharp, clean, and intricately detailed, accurately capturing the original artwork's facial structure, eye style, expression, and hair. The final result must be immediately recognizable as the same character, elevated to a premium physical product standard. Do NOT generate a generic or abstract face.\n\n**Scene Composition (Strictly follow these details):**\n1. **Figurine & Base:** Place the figure on a computer desk. It must stand on a simple, circular, transparent acrylic base WITHOUT any text or markings.\n2. **Computer Monitor:** In the background, a computer monitor must display 3D modeling software (like ZBrush or Blender) with the digital sculpt of the very same figurine visible on the screen.\n3. **Artwork Display:** Next to the computer screen, include a transparent acrylic board with a wooden base. This board holds a print of the original 2D artwork that the figurine is based on.\n4. **Environment:** The overall setting is a desk, with elements like a keyboard to enhance realism. The lighting should be natural and well-lit, as if in a room."
-            },
-            "figurine_2": {
-                "description": "#手办化2", "type": "text", "editor_mode": true, "default": "Use the nano-banana model to create a 1/7 scale commercialized figure of thecharacter in the illustration, in a realistic styie and environment.Place the figure on a computer desk, using a circular transparent acrylic basewithout any text.On the computer screen, display the ZBrush modeling process of the figure.Next to the computer screen, place a BANDAl-style toy packaging box printedwith the original artwork."
-            },
-            "figurine_3": {
-                "description": "#手办化3", "type": "text", "editor_mode": true, "default": "Your primary mission is to accurately convert the subject from the user's photo into a photorealistic, masterpiece quality, 1/7 scale PVC figurine, presented in its commercial packaging.\n\n**Crucial First Step: Analyze the image to identify the subject's key attributes (e.g., human male, human female, animal, specific creature) and defining features (hair style, clothing, expression). The generated figurine must strictly adhere to these identified attributes.** This is a mandatory instruction to avoid generating a generic female figure.\n\n**Top Priority - Character Likeness:** The figurine's face MUST maintain a strong likeness to the original character. Your task is to translate the 2D facial features into a 3D sculpt, preserving the identity, expression, and core characteristics. If the source is blurry, interpret the features to create a sharp, well-defined version that is clearly recognizable as the same character.\n\n**Scene Details:**\n1. **Figurine:** The figure version of the photo I gave you, with a clear representation of PVC material, placed on a round plastic base.\n2. **Packaging:** Behind the figure, there should be a partially transparent plastic and paper box, with the character from the photo printed on it.\n3. **Environment:** The entire scene should be in an indoor setting with good lighting."
-            },
-            "figurine_4": {
-                "description": "#手办化4", "type": "text", "editor_mode": true, "default": "Please accurately transform the subject in this photo into a realistic, masterpiece-worthy 1/7 scale PVC figurine. This figurine must possess 3D dimensionality, and the PVC texture must be clearly represented. The figurine is placed in a figurine display cabinet made of multi-layered glass; appropriate space should be left between the top of the figurine and the upper shelf, and the figurine must be paired with a transparent base. The indoor scene must be visible through the glass. Different figurines can be placed on other shelves, but they should exhibit a natural depth of field and blurred effect to further enhance the sense of spatial depth and highlight the main figurine. The scene requires a bright main light source, and the display cabinet should be embedded with dim LED strip lights; the overall light and reflections must blend naturally with the scene. The frame angle does not need to be fixed in a specific orientation.\nDetail Specifications: Every part of the figurine must be 3D dimensional, and flat or two-dimensional effects are prohibited; under no circumstances shall contour lines or outlines appear; when repairing missing parts of the figurine, no low-quality content shall appear; if repairing a human figure, it is necessary to ensure normal limb shape, coordinated movements, and reasonable proportions of all parts; if the original photo is not a full-body shot, try to supplement the figurine into a full-body form as much as possible; the expression, movements, and angle of the human figurine must be completely consistent with the original photo, but it must be 3D dimensional; the head of the human figurine must not be too large, the legs must not be too short, and the overall figure must not look short; for chibi cartoon subjects, their original proportions shall be retained, but they must be 3D dimensional; if the subject is an animal, its fur should be simplified to make it more like a figurine product; attention must be paid to following the perspective principle of objects appearing larger when closer and smaller when farther away."
-            },
-            "figurine_5": {
-                "description": "#手办化5", "type": "text", "editor_mode": true, "default": "Realistic PVC figure based on the game screenshot character, exact pose replication highly detailed textures PVC material with subtle sheen and smooth paint finish, placed on an indoor wooden computer desk (with subtle desk items like a figure box/mouse), illuminated by soft indoor light (mix of desk lamp and natural window light) for realistic shadows and highlights, macro photography style,high resolution,sharp focus on the figure,shallow depth of field (desk background slightly blurred but visible), no stylization,true-to-reference color and design, 1:1scale."
-            },
-            "figurine_6": {
-                "description": "#手办化6", "type": "text", "editor_mode": true, "default": "Create a premium, collectible 1/7 scale standalone figurine based on the image, meticulously replicating the character, made from smooth PVC and ABS plastic with a professional matte finish. It stands on a minimalist transparent acrylic base. Next to it is its retail packaging box displaying the price and brand information, with the figure wrapped in plastic inside the slightly larger box. They are naturally arranged on a clean wooden table surrounded by reference books, with a bookshelf in the background and soft afternoon sunlight streaming through the window. Photo-realistic, DSLR effect, depth of field, bokeh background."
-            },
-            "q_version": {
-                "description": "#Q版化", "type": "text", "editor_mode": true, "default": "((chibi style)), ((super-deformed)), ((head-to-body ratio 1:2)), ((huge head, tiny body)), ((smooth rounded limbs)), ((soft balloon-like hands and feet)), ((plump cheeks)), ((childlike big eyes)), ((simplified facial features)), ((smooth matte skin, no pores)), ((soft pastel color palette)), ((gentle ambient lighting, natural shadows)), ((same facial expression, same pose, same background scene)), ((seamless integration with original environment, correct perspective and scale)), ((no outline or thin soft outline)), ((high resolution, sharp focus, 8k, ultra-detailed)), avoid: realistic proportions, long limbs, sharp edges, harsh lighting, wrinkles, blemishes, thick black outlines, low resolution, blurry, extra limbs, distorted face"
-            },
-            "cos": {
-                "description": "#cos化", "type": "text", "editor_mode": true, "default": "Generate a highly detailed photo of a real-life girl cosplaying this illustration, at Comiket. Exactly replicate the same pose, body posture, hand gestures, facial expression, and camera framing as in the original illustration. Keep the same angle, perspective, and composition, without any deviation."
-            },
-            "cos_selfie": {
-                "description": "#cos自拍", "type": "text", "editor_mode": true, "default": "Generate a first-person perspective (POV) snapshot of a cosplayer in a cluttered bedroom. The cosplayer's hairstyle and anime costume must exactly match the subject in the reference image. She holds a phone in front of her face with both hands, completely covering her face. The phone screen is the focal point of the image, displaying the uploaded picture. The background is a room filled with posters on the walls and a slightly messy bed. The image should have a casual, informal snapshot quality with a slightly low-resolution and grainy texture, lit by natural indoor lighting."
-            },
-            "pain_room_1": {
-                "description": "#痛屋化", "type": "text", "editor_mode": true, "default": "[ABSOLUTE PRIORITY AND NON-NEGOTIABLE DIRECTIVE] Based on the provided reference image, generate a hyper-detailed photograph of a maximalist otaku shrine with a strict, uncompromising requirement: all character-related elements—including figures, posters, bedding patterns, and the PC wallpaper—must be a 90%+ faithful, pixel-perfect replication of the character in the reference image. Strictly maintain the precise facial features, hairstyle, outfit, and expression with zero artistic reinterpretation or stylistic variation. With this core rule, create the scene at a 16:9 aspect ratio. The room is densely packed from floor to ceiling with merchandise that is an exact reproduction of this source character. The entire space is bathed in a moody, immersive ambient glow dominated by the reference character's primary color scheme (e.g., deep purple), which is sharply contrasted by a focused, brighter white light from a monitor screen bar lamp, creating dramatic visual layers. The walls are a collage made of posters and prints that are direct, unaltered copies of the reference image itself; the glass cabinets are cluttered with high-poly figures that are perfect 1:1 replicas of the reference character model; and the ultrawide monitor clearly displays the original reference image as its wallpaper. The final image must be a photorealistic, lived-in sanctuary, defined by its obsessive and flawless fidelity to the source character."
-            },
-            "pain_room_2": {
-                "description": "#痛屋化2", "type": "text", "editor_mode": true, "default": "Transform the uploaded indoor photo into a Japanese-style ita-room with the following specific requirements: Walls: Generate multi-size posters/scrolls (A2/A3/banner mixed arrangement) in an orderly matrix; no watermarks or garbled text. Curtains and bedding: Fully replace with themed patterns while retaining fabric folds and textures; pillowcases and life-sized cushions use the same character design. Display: Add glass display cabinets and open shelves, densely displaying themed figurines, acrylic stands, badge boards, and boxed peripherals of the same theme; arrange them in groups by height and color system. Desk: Keep the original equipment and light and shadow, only replace the screensaver/wallpaper with themed images; organize the wires neatly. Lighting: Add soft RGB light strips (along the ceiling and desk edges), coordinated with the main color, avoiding overexposure and color overflow. Texture: Realistic materials for PVC figurines, spray-painted paper, acrylic, and cotton fabrics; natural glass reflections without ghosting. Consistency: The face, hair color, and clothing details of the character on all carriers (posters/cushions/stands/box art) must maintain the same character and art style. Constraints (negative): No brand logos, watermarks, typos, distorted faces, perspective errors, repeated textures, over-sharpening, or noise."
-            },
-            "pain_car": {
-                "description": "#痛车化", "type": "text", "editor_mode": true, "default": "A Xiaomi SU7 electric sedan with a professional 'itasha' wrap, parked on a rain-slicked, neon-lit city street at dusk. Accurately depict the Xiaomi SU7 body shape, grille-less front fascia, slim headlights, taillights, wheel design, and logo placements. The entire car is covered in a vibrant, high-resolution decal featuring multiple dynamic poses and expressions of ONLY the provided anime character. The glossy finish reflects colorful city lights, making the character artwork pop.Seamless full-body wrap integrating hood, doors, and rear quarter panels. Dynamic three-quarter front view showcasing the hood and side artwork."
-            },
-            "clown": {
-                "description": "#孤独的我", "type": "text", "editor_mode": true, "default": "Generate a hyper-realistic photograph with RAW photo quality, captured by a top-tier camera. The image must exhibit realistic skin textures, rich lighting layers, and a natural depth of field. Absolutely no anime, cartoon, CG, or painted elements are allowed—the result must be a 100% authentic photographic representation. The scene is set in a restaurant, captured from a first-person perspective. I am sitting alone, holding chopsticks in one hand and a phone in the other, displaying a photo of a beautiful cosplayer. In the background, the same cosplayer (dressed as the anime character) is dining with her boyfriend, feeding him a bite of food. The composition should evoke a sense of loneliness and contrast between the observer and the observed."
-            },
-            "view_3": {
-                "description": "#第三视角", "type": "text", "editor_mode": true, "default": "A scene in a bright, modern McDonald’s or KFC restaurant at night, consistent with the visual style of the provided original image (no AI-generated imagery). In front of you (the viewer), there are foods like a hamburger and a small serving of French fries (with a visibly small portion) on the table, along with a crumpled used tissue, a few food crumbs (adding a sense of realism), and an Android phone (with a character displayed on the screen)—you are holding a hamburger or a French fry in your hand. At a very nearby separate table (not a shared table)—so close that it’s within easy sight—two Chinese people are sitting and engaging in intimate interactions (e.g., gentle eye contact, leaning slightly towards each other, or one resting a hand lightly on the other’s arm). One of them is a coser dressed exactly as the character on your Android phone, with the coser’s gender strictly corresponding to the character’s gender (male coser remains male, female coser remains female, no gender reversal) and matching that of the character in the provided original image; the other is a man. On their table, there is a two-person set meal, and both figures are slightly blurred (not overly so). The overall atmosphere blends a relaxed dining vibe with character-related elements, featuring natural lighting, and adheres to the visual style of the original image."
-            },
-            "ghost": {
-                "description": "#鬼图", "type": "text", "editor_mode": true, "default": "Convert the Input Image into a Convincing, Found-Footage Style Cryptid Sighting Photograph 1. The image should depict a [insert creature name or description - e.g., slender, pale humanoid; multi-limbed, insect-like entity; shadowy, canine-like beast], and the creature’s appearance must be highly similar to that in the original image. The creature should be spotted in a hyperrealistic and eerily desolate location, such as [e.g., an abandoned industrial complex at night, a remote, snow-covered mountain pass, the murky depths of a forgotten urban canal, a desolate rural road in the dead of winter].​2. The shot must appear accidental, amateurish, and raw, as if captured spontaneously by a low-fidelity device like a [e.g., degraded VHS camcorder, grainy security camera, old disposable camera with flash, an infrared trail cam that's seen better days].​3. To maximize the unsettling authenticity, the image quality should be significantly imperfect: featuring extreme [e.g., heavy digital noise, pronounced film grain, severe motion blur making details indistinct, a strong, disorienting lens flare, being significantly out of focus, or displaying visible static and tracking lines]. The creature should be partially obscured and difficult to clearly discern, perhaps hidden by [e.g., dense, skeletal tree branches; thick, unnatural fog; distorted reflections on murky water; the jagged silhouette of derelict machinery; or existing within deep, oppressive shadows].​4. The lighting is critically dim and unsettling, possibly at [e.g., the darkest hour before dawn, a moonless midnight, or starkly illuminated by a harsh, direct, and slightly malfunctioning camera flash that overexposes parts of the scene].5. The overall feeling should evoke profound unease, dread, and a sense of witnessing something truly inexplicable and horrifying. Emphasize an atmosphere of isolation, decay, and the uncanny.​6. Keywords: cryptozoology, urban legend, paranormal, faked sighting, unsettling, horror, cryptid, grotesque, eerie, found footage, degraded quality, creature feature."
-            },
-            "view_1": {
-                "description": "#第一视角", "type": "text", "editor_mode": true, "default": "At the venue of Japan's Comic Market Doujinshi Sales Event commonly known as Comiket a real Chinese boy or girl of the same gender as the character in the original image is sitting directly opposite you wearing a costume consistent with the one in the original image. A double meal set including hamburgers and French fries is placed on your table with crumpled tissues and some food scraps scattered beside it creating a strong sense of realism. Your Android phone is casually laid on the table and its screen displays an unedited original image of the character. The person is engaging in intimate interaction with you gazing gently into your eyes leaning slightly towards you and placing one hand softly on your arm.You are holding a hamburger or a few French fries."
-            }
+            "figurine_1": { "description": "手办化", "type": "text", "editor_mode": true, "default": "" },
+            "figurine_2": { "description": "手办化2", "type": "text", "editor_mode": true, "default": "" },
+            "figurine_3": { "description": "手办化3", "type": "text", "editor_mode": true, "default": "" },
+            "figurine_4": { "description": "手办化4", "type": "text", "editor_mode": true, "default": "" },
+            "figurine_5": { "description": "手办化5", "type": "text", "editor_mode": true, "default": "" },
+            "figurine_6": { "description": "手办化6", "type": "text", "editor_mode": true, "default": "" },
+            "q_version": { "description": "Q版化", "type": "text", "editor_mode": true, "default": "" },
+            "cos": { "description": "cos化", "type": "text", "editor_mode": true, "default": "" },
+            "cos_selfie": { "description": "cos自拍", "type": "text", "editor_mode": true, "default": "" },
+            "pain_room_1": { "description": "痛屋化", "type": "text", "editor_mode": true, "default": "" },
+            "pain_room_2": { "description": "痛屋化2", "type": "text", "editor_mode": true, "default": "" },
+            "pain_car": { "description": "痛车化", "type": "text", "editor_mode": true, "default": "" },
+            "clown": { "description": "孤独的我", "type": "text", "editor_mode": true, "default": "" },
+            "view_3": { "description": "第三视角", "type": "text", "editor_mode": true, "default": "" },
+            "ghost": { "description": "鬼图", "type": "text", "editor_mode": true, "default": "" },
+            "view_1": { "description": "第一视角", "type": "text", "editor_mode": true, "default": "" },
+            "sticker": { "description": "贴纸化", "type": "text", "editor_mode": true, "default": "" },
+            "foot_jade": { "description": "玉足", "type": "text", "editor_mode": true, "default": "" },
+            "fumo": { "description": "fumo化", "type": "text", "editor_mode": true, "default": "" }
         }
     }
 }
