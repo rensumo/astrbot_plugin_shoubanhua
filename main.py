@@ -19,7 +19,7 @@ from astrbot.core import AstrBotConfig
 from astrbot.core.message.components import At, Image, Reply, Plain
 from astrbot.core.platform.astr_message_event import AstrMessageEvent
 
-@register("FigurinePro", "user", "一个强大的图片风格化插件", "1.1.0")
+@register("shoubanhua", "shskjw", "一个强大的图片风格化插件", "v1.1.0")
 class FigurineProPlugin(Star):
     
     class ImageWorkflow:
@@ -477,3 +477,4 @@ class FigurineProPlugin(Star):
     async def terminate(self):
         if self.iwf: await self.iwf.terminate()
         logger.info("[FigurinePro] 插件已终止")
+
