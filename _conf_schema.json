@@ -92,6 +92,30 @@
         "editor_language": "markdown",
         "default": "🎨 手办化Pro插件使用帮助：\n\n📌 基础命令 (可加#也可不加)：\n手办化 [图片] - 生成标准手办化图片\nQ版化 [图片] - 生成Q版手办化图片\n痛屋化 [图片] - 生成痛屋场景图片\n痛车化 [图片] - 生成痛车场景图片\ncos化 [图片] - 生成cosplay照片\ncos自拍 [图片] - 生成cosplay自拍\n孤独的我 [图片] - 生成孤独场景图片\n贴纸化 [图片] - 生成贴纸化图片\n玉足 [图片] - 生成玉足图片\nfumo化 [图片] - 生成fumo化图片\n\n📌 数字版本：\n手办化2 [图片]\n手办化3 [图片]\n手办化4 [图片]\n手办化5 [图片]\n手办化6 [图片]\n\n📌 新增命令：\n第三视角 [图片]\n痛屋化2 [图片]\n鬼图 [图片]\n第一视角 [图片]\n\n📌 自定义提示词：\nbnn <提示词> [图片]\n\n📌 使用方式：\n1. 发送图片并使用命令\n2. 引用含有图片的消息并使用命令\n3. @某人使用命令（将使用该人的头像）\n\n📌 次数查询 (需加#)：\n#手办化查询次数 - 查询自己和本群的剩余次数\n\n📌 管理命令 (仅主人, 需加#)：\n#手办化添加key <key1> <key2>...\n#手办化key列表\n#手办化删除key <序号|all>\n#手办化增加用户次数 <QQ号> <次数>\n#手办化增加群组次数 <群号> <次数>"
     },
+    "enable_checkin": {
+        "description": "【签到系统】是否开启每日签到功能",
+        "type": "bool",
+        "hint": "开启后，用户可使用 #手办化签到 命令获取个人次数。",
+        "default": false
+    },
+    "enable_random_checkin": {
+        "description": "【签到系统】是否开启随机签到奖励",
+        "type": "bool",
+        "hint": "开启后，签到奖励为1到设置的最大值之间的随机数。关闭则使用下方的固定奖励值。",
+        "default": false
+    },
+    "checkin_fixed_reward": {
+        "description": "【签到系统】固定签到奖励次数",
+        "type": "int",
+        "hint": "当“随机签到奖励”关闭时，用户每次签到获得的固定次数。",
+        "default": 3
+    },
+    "checkin_random_reward_max": {
+        "description": "【签到系统】随机签到奖励最大值",
+        "type": "int",
+        "hint": "当“随机签到奖励”开启时，用户签到可获得的最高次数（最低为1）。",
+        "default": 5
+    },
     "prompts": {
         "description": "【可选】自定义指令的 Prompt 提示词",
         "type": "object",
@@ -115,7 +139,30 @@
             "view_1": { "description": "第一视角", "type": "text", "editor_mode": true, "default": "" },
             "sticker": { "description": "贴纸化", "type": "text", "editor_mode": true, "default": "" },
             "foot_jade": { "description": "玉足", "type": "text", "editor_mode": true, "default": "" },
-            "fumo": { "description": "fumo化", "type": "text", "editor_mode": true, "default": "" }
+            "fumo": { "description": "fumo化", "type": "text", "editor_mode": true, "default": "" },
+            "cos_meet": { "description": "cos相遇", "type": "text", "editor_mode": true, "default": "" },
+            "three_view": { "description": "三视图", "type": "text", "editor_mode": true, "default": "" },
+            "outfit_breakdown": { "description": "穿搭拆解", "type": "text", "editor_mode": true, "default": "" },
+            "model_kit": { "description": "拆解图", "type": "text", "editor_mode": true, "default": "" },
+            "character_ui": { "description": "角色界面", "type": "text", "editor_mode": true, "default": "" },
+            "character_sheet": { "description": "角色设定", "type": "text", "editor_mode": true, "default": "" },
+            "3d_printing": { "description": "3D打印", "type": "text", "editor_mode": true, "default": "" },
+            "miniaturize": { "description": "微型化", "type": "text", "editor_mode": true, "default": "" },
+            "keychain": { "description": "挂件化", "type": "text", "editor_mode": true, "default": "" },
+            "pose_sheet": { "description": "姿势表", "type": "text", "editor_mode": true, "default": "" },
+            "hd_restoration": { "description": "高清修复", "type": "text", "editor_mode": true, "default": "" },
+            "turn_around": { "description": "人物转身", "type": "text", "editor_mode": true, "default": "" },
+            "drawing_grid_4": { "description": "绘画四宫格", "type": "text", "editor_mode": true, "default": "" },
+            "hairstyle_grid_9": { "description": "发型九宫格", "type": "text", "editor_mode": true, "default": "" },
+            "avatar_grid_9": { "description": "头像九宫格", "type": "text", "editor_mode": true, "default": "" },
+            "expression_grid_9": { "description": "表情九宫格", "type": "text", "editor_mode": true, "default": "" },
+            "multi_camera": { "description": "多机位", "type": "text", "editor_mode": true, "default": "" },
+            "movie_storyboard": { "description": "电影分镜", "type": "text", "editor_mode": true, "default": "" },
+            "anime_storyboard": { "description": "动漫分镜", "type": "text", "editor_mode": true, "default": "" },
+            "live_action_1": { "description": "真人化", "type": "text", "editor_mode": true, "default": "" },
+            "live_action_2": { "description": "真人化2", "type": "text", "editor_mode": true, "default": "" },
+            "half_live_action": { "description": "半真人", "type": "text", "editor_mode": true, "default": "" },
+            "half_fusion": { "description": "半融合", "type": "text", "editor_mode": true, "default": "" }
         }
     }
 }
