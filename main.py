@@ -7,7 +7,7 @@ import random
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any, List, Optional
 
 import aiohttp
 from PIL import Image as PILImage
@@ -24,7 +24,7 @@ from astrbot.core.platform.astr_message_event import AstrMessageEvent
     "astrbot_plugin_shoubanhua",
     "shskjw",
     "通过第三方api进行手办化等功能",
-    "1.2.0",
+    "1.2.2",
     "https://github.com/shkjw/astrbot_plugin_shoubanhua",
 )
 class FigurineProPlugin(Star):
@@ -40,7 +40,8 @@ class FigurineProPlugin(Star):
                     resp.raise_for_status()
                     return await resp.read()
             except Exception as e:
-                logger.error(f"图片下载失败: {e}"); return None
+                logger.error(f"图片下载失败: {e}");
+                return None
 
         async def _get_avatar(self, user_id: str) -> bytes | None:
             if not user_id.isdigit(): logger.warning(f"无法获取非 QQ 平台或无效 QQ 号 {user_id} 的头像。"); return None
@@ -74,22 +75,55 @@ class FigurineProPlugin(Star):
             if not raw: return None
             return await loop.run_in_executor(None, self._extract_first_frame_sync, raw)
 
-        async def get_first_image(self, event: AstrMessageEvent) -> bytes | None:
+        # 【修改】将 get_first_image 修改为 get_images 以支持多图
+        async def get_images(self, event: AstrMessageEvent) -> List[bytes]:
+            """
+            从事件中提取所有图片。
+            提取顺序:
+            1. 回复中的所有图片
+            2. 消息体中的所有图片
+            3. 如果没有上述图片，则提取消息中所有@用户的头像
+            4. 如果连@用户都没有，则提取发送者自己的头像
+            """
+            img_bytes_list: List[bytes] = []
+            at_user_ids: List[str] = []
+
+            # 1. 搜集回复链中的图片
             for seg in event.message_obj.message:
                 if isinstance(seg, Reply) and seg.chain:
                     for s_chain in seg.chain:
                         if isinstance(s_chain, Image):
-                            if s_chain.url and (img := await self._load_bytes(s_chain.url)): return img
-                            if s_chain.file and (img := await self._load_bytes(s_chain.file)): return img
-            at_user_id = None
+                            if s_chain.url and (img := await self._load_bytes(s_chain.url)):
+                                img_bytes_list.append(img)
+                            elif s_chain.file and (img := await self._load_bytes(s_chain.file)):
+                                img_bytes_list.append(img)
+
+            # 2. 搜集当前消息中的图片和@用户
             for seg in event.message_obj.message:
                 if isinstance(seg, Image):
-                    if seg.url and (img := await self._load_bytes(seg.url)): return img
-                    if seg.file and (img := await self._load_bytes(seg.file)): return img
+                    if seg.url and (img := await self._load_bytes(seg.url)):
+                        img_bytes_list.append(img)
+                    elif seg.file and (img := await self._load_bytes(seg.file)):
+                        img_bytes_list.append(img)
                 elif isinstance(seg, At):
-                    at_user_id = str(seg.qq)
-            if at_user_id: return await self._get_avatar(at_user_id)
-            return await self._get_avatar(event.get_sender_id())
+                    at_user_ids.append(str(seg.qq))
+
+            # 如果已经有图片了，就直接返回
+            if img_bytes_list:
+                return img_bytes_list
+
+            # 3. 如果没有图片，则搜集@用户的头像
+            if at_user_ids:
+                for user_id in at_user_ids:
+                    if avatar := await self._get_avatar(user_id):
+                        img_bytes_list.append(avatar)
+                return img_bytes_list
+
+            # 4. 如果连@都没有，则获取发送者头像
+            if avatar := await self._get_avatar(event.get_sender_id()):
+                img_bytes_list.append(avatar)
+
+            return img_bytes_list
 
         async def terminate(self):
             if self.session and not self.session.closed: await self.session.close()
@@ -148,7 +182,8 @@ class FigurineProPlugin(Star):
             data = await loop.run_in_executor(None, json.loads, content)
             if isinstance(data, dict): self.user_counts = {str(k): v for k, v in data.items()}
         except Exception as e:
-            logger.error(f"加载用户次数文件时发生错误: {e}", exc_info=True); self.user_counts = {}
+            logger.error(f"加载用户次数文件时发生错误: {e}", exc_info=True);
+            self.user_counts = {}
 
     async def _save_user_counts(self):
         loop = asyncio.get_running_loop()
@@ -176,7 +211,8 @@ class FigurineProPlugin(Star):
             data = await loop.run_in_executor(None, json.loads, content)
             if isinstance(data, dict): self.group_counts = {str(k): v for k, v in data.items()}
         except Exception as e:
-            logger.error(f"加载群组次数文件时发生错误: {e}", exc_info=True); self.group_counts = {}
+            logger.error(f"加载群组次数文件时发生错误: {e}", exc_info=True);
+            self.group_counts = {}
 
     async def _save_group_counts(self):
         loop = asyncio.get_running_loop()
@@ -205,7 +241,8 @@ class FigurineProPlugin(Star):
             data = await loop.run_in_executor(None, json.loads, content)
             if isinstance(data, dict): self.user_checkin_data = {str(k): v for k, v in data.items()}
         except Exception as e:
-            logger.error(f"加载用户签到文件时发生错误: {e}", exc_info=True); self.user_checkin_data = {}
+            logger.error(f"加载用户签到文件时发生错误: {e}", exc_info=True);
+            self.user_checkin_data = {}
 
     async def _save_user_checkin_data(self):
         loop = asyncio.get_running_loop()
@@ -615,13 +652,30 @@ class FigurineProPlugin(Star):
                     yield event.plain_result("❌ 您的使用次数已用完，请联系管理员补充。")
                     return
 
-        if not self.iwf or not (img_bytes := await self.iwf.get_first_image(event)):
+        # 【修改】调用 get_images 并处理图片列表
+        if not self.iwf or not (img_bytes_list := await self.iwf.get_images(event)):
             yield event.plain_result("请发送或引用一张图片，或@一个用户再试。")
             return
 
-        yield event.plain_result(f"🎨 收到请求，正在生成 [{cmd}] 风格图片...")
+        # 【修改】根据指令决定是单图还是多图
+        images_to_process = []
+        if cmd == "bnn":
+            MAX_IMAGES = 5
+            original_count = len(img_bytes_list)
+            if original_count > MAX_IMAGES:
+                images_to_process = img_bytes_list[:MAX_IMAGES]
+                yield event.plain_result(f"🎨 检测到 {original_count} 张图片，已自动选取前 {MAX_IMAGES} 张进行生成…")
+            else:
+                images_to_process = img_bytes_list
+                yield event.plain_result(f"🎨 检测到 {len(images_to_process)} 张图片，正在生成 [{cmd}] 风格图片...")
+        else:
+            # 其他指令默认只使用第一张图，保持原有逻辑
+            images_to_process = [img_bytes_list[0]]
+            yield event.plain_result(f"🎨 收到请求，正在生成 [{cmd}] 风格图片...")
+
         start_time = datetime.now()
-        res = await self._call_api(img_bytes, user_prompt)
+        # 【修改】将图片列表传入
+        res = await self._call_api(images_to_process, user_prompt)
         elapsed = (datetime.now() - start_time).total_seconds()
 
         if isinstance(res, bytes):
@@ -669,20 +723,36 @@ class FigurineProPlugin(Star):
             pass
         return None
 
-    async def _call_api(self, image_bytes: bytes, prompt: str) -> bytes | str:
+    # 【修改】修改函数签名以接收图片列表，并构建多图请求体
+    async def _call_api(self, image_bytes_list: List[bytes], prompt: str) -> bytes | str:
         api_url = self.conf.get("api_url")
         if not api_url: return "API URL 未配置"
         api_key = await self._get_api_key()
         if not api_key: return "无可用的 API Key"
-        img_b64 = base64.b64encode(image_bytes).decode("utf-8")
+
         headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
-        payload = {"model": "nano-banana", "max_tokens": 1500, "stream": False, "messages": [{"role": "user",
-                                                                                              "content": [
-                                                                                                  {"type": "text",
-                                                                                                   "text": prompt},
-                                                                                                  {"type": "image_url",
-                                                                                                   "image_url": {
-                                                                                                       "url": f"data:image/png;base64,{img_b64}"}}]}]}
+
+        # 构建 content 列表，先添加 text，再循环添加所有 image
+        content = [{"type": "text", "text": prompt}]
+        for image_bytes in image_bytes_list:
+            img_b64 = base64.b64encode(image_bytes).decode("utf-8")
+            content.append({
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/png;base64,{img_b64}"
+                }
+            })
+
+        payload = {
+            "model": "nano-banana",
+            "max_tokens": 1500,
+            "stream": False,
+            "messages": [{
+                "role": "user",
+                "content": content
+            }]
+        }
+
         try:
             if not self.iwf: return "ImageWorkflow 未初始化"
             async with self.iwf.session.post(api_url, json=payload, headers=headers, proxy=self.iwf.proxy,
@@ -704,11 +774,12 @@ class FigurineProPlugin(Star):
                 else:
                     return await self.iwf._download_image(gen_image_url) or "下载生成的图片失败"
         except asyncio.TimeoutError:
-            logger.error("API 请求超时"); return "请求超时"
+            logger.error("API 请求超时");
+            return "请求超时"
         except Exception as e:
-            logger.error(f"调用 API 时发生未知错误: {e}", exc_info=True); return f"发生未知错误: {e}"
+            logger.error(f"调用 API 时发生未知错误: {e}", exc_info=True);
+            return f"发生未知错误: {e}"
 
     async def terminate(self):
         if self.iwf: await self.iwf.terminate()
         logger.info("[FigurinePro] 插件已终止")
-
