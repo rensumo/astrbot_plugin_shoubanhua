@@ -16,7 +16,6 @@
 
 ### 安装
 
-1.  下载本插件，解压后得到 `astrbot_plugin_figurine_pro` 文件夹。
 2.  将该文件夹放入 `astrbot/plugins` 目录下。
 3.  重启 AstrBot。
 
