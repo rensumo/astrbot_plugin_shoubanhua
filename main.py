@@ -744,7 +744,7 @@ class FigurineProPlugin(Star):
             })
 
         payload = {
-            "model": "nano-banana",
+            "model": "gemini-2.5-flash-image-preview",
             "max_tokens": 1500,
             "stream": False,
             "messages": [{
@@ -783,3 +783,4 @@ class FigurineProPlugin(Star):
     async def terminate(self):
         if self.iwf: await self.iwf.terminate()
         logger.info("[FigurinePro] 插件已终止")
+
